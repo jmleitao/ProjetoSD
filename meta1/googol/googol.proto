@@ -1,0 +1,133 @@
+syntax = "proto3";
+
+package googol;
+
+import "google/protobuf/empty.proto";
+
+
+// Gateway service definition
+
+service Gateway {
+    // Client e Downloaders: colocar um URL na fila para ser indexado
+    rpc putNew (PutNewRequest) returns (google.protobuf.Empty);
+
+    // Downloaders: retirar o proximo URL da fila
+    rpc takeNext (google.protobuf.Empty) returns (TakeNextResponse);
+
+    // [DL] Downloaders: colocar varios URLs na fila de uma vez (links de uma pagina)
+    rpc putMany (UrlList) returns (PushReply);
+
+    // [DL] Downloaders: confirmar que terminaram um URL (senao volta a fila ao fim do lease)
+    rpc done (UrlRequest) returns (google.protobuf.Empty);
+
+    // Client: pesquisar paginas que contenham todas as palavras (10 de cada vez)
+    rpc searchWords (SearchWordsRequest) returns (SearchWordsResponse);
+
+    // Client: paginas com ligacao para um URL
+    rpc getBacklinks (GetBacklinksRequest) returns (GetBacklinksResponse);
+
+    // Client: recebe as estatisticas sempre que mudam (streaming)
+    rpc getStats (google.protobuf.Empty) returns (stream StatsResponse);
+
+    // Barrels: registar-se na Gateway ao arrancar
+    rpc registerBarrel (RegisterBarrelRequest) returns (google.protobuf.Empty);
+
+    // Barrels: avisar a Gateway que o tamanho do indice mudou
+    rpc updateIndexSize (UpdateIndexSizeRequest) returns (google.protobuf.Empty);
+}
+
+
+// Barrel service definition
+
+service Barrel {
+    // Gateway: paginas que contem todas as palavras, ordenadas por backlinks
+    rpc searchWords (SearchWordsRequest) returns (SearchWordsResponse);
+
+    // Gateway: paginas com ligacao para um URL
+    rpc getBacklinks (GetBacklinksRequest) returns (GetBacklinksResponse);
+
+    // Downloaders: enviar a informacao de uma pagina (reliable multicast)
+    // [DL] Regressar sem erro e o ACK. Tem de ser IDEMPOTENTE: ignorar msg_id ja aplicados
+    //      (e responder na mesma sem erro) e so responder depois de persistir a mensagem.
+    rpc addToIndex (AddToIndexRequest) returns (google.protobuf.Empty);
+
+    // [DL] Barrel a recuperar-se: pede ao outro Barrel as mensagens ja aplicadas.
+    //      Em streaming, porque o estado completo pode passar o limite de 4 MB de uma mensagem gRPC.
+    rpc getSnapshot (google.protobuf.Empty) returns (stream AddToIndexRequest);
+}
+
+message PutNewRequest {
+    string url = 1;
+}
+
+message TakeNextResponse {
+    string url = 1;
+}
+
+message SearchWordsRequest {
+    repeated string words = 1;
+    int32 page = 2;            // pagina de resultados (0,1,2,...)-Gateway
+}
+
+message PageInfo {
+    string url = 1;
+    string title = 2;
+    string citation = 3;
+    int32 backlinks = 4;       // numero de paginas com ligacao 
+}
+
+message SearchWordsResponse {
+    repeated PageInfo pages = 1;
+    bool has_more = 2;         // ainda ha mais resultados 
+}
+
+message GetBacklinksRequest {
+    string url = 1;
+}
+
+message GetBacklinksResponse {
+    repeated string urls = 1;
+}
+
+message BarrelStats {
+    string name = 1;
+    int32 index_size = 2;
+    float avg_response_time = 3;   // em decimas de segundo
+}
+
+message StatsResponse {
+    repeated string top_searches = 1;   // 10 pesquisas mais comuns
+    repeated BarrelStats barrels = 2;   // barrels ativos
+}
+
+message RegisterBarrelRequest {
+    string name = 1;
+    string address = 2;        
+}
+
+message UpdateIndexSizeRequest {
+    string name = 1;
+    int32 index_size = 2;
+}
+
+message AddToIndexRequest {
+    string url = 1;
+    string title = 2;
+    string citation = 3;
+    repeated string words = 4;
+    repeated string links = 5;   // links encontrados na pagina
+    string msg_id = 6;           // [DL] "<downloader>:<seq>", unico; serve para deduplicar
+}
+
+// [DL] mensagens novas
+message UrlList {
+    repeated string urls = 1;
+}
+
+message UrlRequest {
+    string url = 1;
+}
+
+message PushReply {
+    int32 accepted = 1;          // quantos URLs eram novos
+}

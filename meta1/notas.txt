@@ -1,0 +1,79 @@
+Barrel.py
+"""Index Storage Barrel (réplica). Correr dois, com nomes e portas diferentes:
+
+O que faz:
+  addToIndex    recebe páginas dos Downloaders (multicast). IDEMPOTENTE e só regressa
+                (= ACK) depois de gravar em disco.
+  searchWords / getBacklinks   respondem à Gateway
+  getSnapshot   envia (em streaming) as mensagens já aplicadas a uma réplica que regressa
+  Gateway       regista-se e repete o registo de 5 em 5 s (se a Gateway o remover, volta a entrar)
+                e comunica o tamanho do índice (nº de palavras) sempre que muda.
+"""
+
+Barrel_store.py
+"""Armazenamento persistente do Barrel (SQLite, biblioteca standard).
+
+Tabelas:
+  messages  msg_id -> mensagem original (JSON). Serve para DEDUPLICAR (idempotência)
+            e para o snapshot que sincroniza a outra réplica.
+  pages     url -> título, citação
+  words     (palavra, url)  = índice invertido
+  vocab     palavras distintas (tamanho do índice, para as estatísticas)
+  links     (origem, destino) = ligações; os BACKLINKS de X são as origens com destino X
+
+Garantias:
+  - apply() corre numa transação: ou fica tudo gravado ou nada.
+  - apply() só regressa depois do COMMIT (synchronous=FULL): é seguro enviar o ACK a seguir.
+  - apply() é idempotente: um msg_id já aplicado devolve False e não altera nada.
+"""
+
+gen_proto.py
+
+"""Gera googol/googol_pb2.py e googol/googol_pb2_grpc.py. Correr na raiz: python gen_proto.py"""
+
+Multicast.py
+"""Multicast fiável sobre RPC (gRPC) - lado do emissor (Downloader).
+
+Algoritmo (multicast fiável iniciado pelo emissor, com ACK positivo):
+ 1. Cada mensagem recebe um msg_id único "<downloader>:<seq>".
+ 2. A mensagem é primeiro gravada num log em disco (outbox) - se o Downloader
+    morrer, as mensagens por entregar são retomadas no arranque seguinte.
+ 3. Existe uma fila e uma thread por Barrel. Cada thread repete o envio, com
+    backoff exponencial, até receber ACK (retorno True). Um Barrel em baixo
+    não atrasa o envio ao outro.
+ 4. Recebido o ACK, regista-o no log (esse par mensagem/Barrel não se repete).
+ 5. Os Barrels são idempotentes (ignoram msg_id repetidos), logo
+    retransmitir é sempre seguro: garante entrega "pelo menos uma vez" +
+    deduplicação = efeito "exatamente uma vez".
+Não é preciso ordenação total: adicionar a conjuntos é comutativo e idempotente.
+"""
+config.py
+
+"""Leitura do config.properties (partilhado com a Gateway e o Cliente)."""
+
+downloader.py
+
+"""Downloader (Web crawler). Correr várias instâncias, cada uma com --id diferente.
+
+  python -m googol.downloader --id d1 --seed https://www.uc.pt
+
+Fala com a Gateway (fila de URLs) e faz multicast fiável aos Barrels.
+Os defaults (Gateway e Barrels) vêm do config.properties.
+"""
+
+url_queue.py
+"""Lógica da fila de URLs (sem rede, por isso é fácil de testar).
+
+- push: adiciona URLs ainda não vistos.
+- pop: entrega um URL a UM só Downloader e dá-lhe um "lease" (prazo).
+- done: o Downloader confirma que terminou. Se não confirmar a tempo
+  (Downloader avariou), o URL volta à fila.
+"""
+
+parser.py
+"""Obtenção e análise de páginas Web (requests + BeautifulSoup)."""
+
+test_multicast.py
+"""Testes da lógica de multicast com Barrels falsos (sem gRPC, sem rede).  python -m unittest"""
+test_barrel.py
+"""Testes do armazenamento do Barrel (SQLite real, sem gRPC).  python -m unittest"""
