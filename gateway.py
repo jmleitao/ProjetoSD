@@ -30,8 +30,8 @@ class GatewayServicer(googol_pb2_grpc.GatewayServicer):
 
     #fila de url's (agora com lease: o url volta a fila se o downloader nao chamar done())
     def putNew(self, request, context):
-        #coloca url na fila se ainda nao foi visto
-        if self.queue.push([request.url]) > 0:
+        #coloca url na fila se ainda nao foi visto. E um URL pedido pelo utilizador: passa a frente dos links encontrados pelos downloaders
+        if self.queue.push([request.url], priority=True) > 0:
             self.saveState()
             print(f"putNew(): {request.url}")
         return empty_pb2.Empty()

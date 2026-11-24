@@ -11,14 +11,22 @@ class URLQueue:
         self._in_progress = {}  # url -> instante limite
         self._lease = lease_seconds
 
-    def push(self, urls) -> int:
+    def push(self, urls, priority: bool = False) -> int:
+        """Adiciona URLs novos. Devolve quantos eram novos.
+
+        priority=False (links encontrados pelos Downloaders): vão para o FIM da fila.
+        priority=True  (URL sugerido pelo utilizador): vai para a FRENTE da fila, para ser o
+        proximo a ser visitado. Se ja estava pendente, passa para a frente."""
         added = 0
         with self._lock:
             for url in urls:
                 if url not in self._seen:
                     self._seen.add(url)
-                    self._pending.append(url)
+                    (self._pending.appendleft if priority else self._pending.append)(url)
                     added += 1
+                elif priority and url in self._pending:
+                    self._pending.remove(url)
+                    self._pending.appendleft(url)
         return added
 
     def pop(self):
