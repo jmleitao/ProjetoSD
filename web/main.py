@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from web.routes import router
 from web.services.gateway import GatewayUnavailable
-from web.templating import BASE_DIR, render
+from web.templates import BASE_DIR, render
 
 app = FastAPI(title="Googol")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
